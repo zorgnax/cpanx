@@ -9,7 +9,6 @@ use ExtUtils::MakeMaker;
 
 use Data::Dumper;
 use YAML;
-use JSON;
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -564,7 +563,7 @@ sub get_meta_data2 {
                 $content =~ s/'/"/g;
                 $content =~ s/,\s*\}/\}/g;
             }
-            my $meta = JSON::from_json($content);
+            my $meta = parse_json($content);
             return $meta;
         }
     }
@@ -582,7 +581,7 @@ sub get_meta_data2 {
         open my $fh, "<", $file or die "Can't open $file: $!";
         my $content = do {local $/; <$fh>};
         close $fh;
-        my $meta = JSON::from_json($content);
+        my $meta = parse_json($content);
         return $meta;
     }
     die "Can't find META.json or MYMETA.json.\n";
@@ -847,6 +846,163 @@ sub get_cpan_mirror {
     if (-e "$cdir/mirror.txt") {
         $cpan = `cat $cdir/mirror.txt` or exit;
     }
+}
+
+sub parse_json_str {
+    my ($str, $val) = @_;
+    if ($$str !~ /\G\s*"/gc) {
+        return 0;
+    }
+    $$val = "";
+    while (1) {
+        if ($$str =~ /\G([^"\\]+)/gc) {
+            $$val .= $1;
+        }
+        elsif ($$str =~ /\G\\u([0-9a-f]{4})/gci) {
+            $$val .= chr(hex($1));
+        }
+        elsif ($$str =~ /\G\\(.)/gc) {
+            my $char = $1;
+            if ($char eq "b") {
+                $$val .= "\b";
+            }
+            elsif ($char eq "f") {
+                $$val .= "\f";
+            }
+            elsif ($char eq "n") {
+                $$val .= "\n";
+            }
+            elsif ($char eq "r") {
+                $$val .= "\r";
+            }
+            elsif ($char eq "t") {
+                $$val .= "\t";
+            }
+            else {
+                $$val .= $char;
+            }
+        }
+        elsif ($$str =~ /\G"/gc) {
+            return 1;
+        }
+        else {
+            die "Expected \"\n";
+        }
+    }
+    return 0;
+}
+
+sub parse_json_hash {
+    my ($str, $val) = @_;
+    if ($$str !~ /\G\s*\{/gc) {
+        return 0;
+    }
+    my $val2;
+    my @values;
+    while (1) {
+        if (!parse_json_str($str, \$val2)) {
+            last;
+        }
+        push @values, $val2;
+        if ($$str !~ /\G\s*:/gc) {
+            die "Expected :\n";
+        }
+        if (!parse_json_value($str, \$val2)) {
+            die "Expected value\n";
+        }
+        push @values, $val2;
+        if ($$str !~ /\G\s*,/gc) {
+            last;
+        }
+    }
+    if ($$str !~ /\G\s*\}/gc) {
+        die "Expected }\n";
+    }
+    $$val = {@values};
+    return 1;
+}
+
+sub parse_json_array {
+    my ($str, $val) = @_;
+    if ($$str !~ /\G\s*\[/gc) {
+        return 0;
+    }
+    my $val2;
+    my @values;
+    while (1) {
+        if (!parse_json_value($str, \$val2)) {
+            last;
+        }
+        push @values, $val2;
+        if ($$str !~ /\G\s*,/gc) {
+            last;
+        }
+    }
+    if ($$str !~ /\G\s*\]/gc) {
+        die "Expected ]\n";
+    }
+    $$val = \@values;
+    return 1;
+}
+
+sub parse_json_number {
+    my ($str, $val) = @_;
+    if ($$str !~ /\G\s*(-?\d+(\.\d*)?(e[+-]?\d+)?)/gci) {
+        return 0;
+    }
+    $$val = $1 + 0;
+    return 1;
+}
+
+sub parse_json_keyword {
+    my ($str, $val) = @_;
+    if ($$str =~ /\G\s*null/gci) {
+        $$val = undef;
+        return 1;
+    }
+    elsif ($$str =~ /\G\s*true/gci) {
+        $$val = 1;
+        return 1;
+    }
+    elsif ($$str =~ /\G\s*false/gci) {
+        $$val = 0;
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+sub parse_json_value {
+    my ($str, $val) = @_;
+    if (parse_json_hash($str, $val)) {
+        return 1;
+    }
+    elsif (parse_json_array($str, $val)) {
+        return 1;
+    }
+    elsif (parse_json_str($str, $val)) {
+        return 1;
+    }
+    elsif (parse_json_number($str, $val)) {
+        return 1;
+    }
+    elsif (parse_json_keyword($str, $val)) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+sub parse_json {
+    my ($str) = @_;
+    my $val;
+    parse_json_value(\$str, \$val);
+    if ($str =~ /\S/gc) {
+        die "Unexpected character\n";
+    }
+    return $val;
 }
 
 sub add_configure_opt {
