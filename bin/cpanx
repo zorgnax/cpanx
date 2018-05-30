@@ -10,8 +10,6 @@ use ExtUtils::MakeMaker;
 use Data::Dumper;
 use YAML;
 use JSON;
-use Time::HiRes;
-use LWP::UserAgent;
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -30,13 +28,9 @@ my $sudo = 1;
 my $reinstall = 0;
 my $test = 1;
 
-binmode STDOUT, ":utf8";
+setup_program();
 get_cpan_mirror();
 get_opts();
-
-get_packages_details();
-exit;
-
 do_action();
 
 sub do_action {
@@ -63,6 +57,18 @@ sub do_action {
     }
     elsif ($action eq "uninstall") {
         uninstall_module();
+    }
+}
+
+sub setup_program {
+    binmode STDOUT, ":utf8";
+    # Make sure END block is executed after ^C or a kill
+    $SIG{INT} = sub {exit;};
+    $SIG{TERM} = sub {exit;};
+    END {
+        unlink "$cdir/output.$$";
+        unlink "$cdir/headers.$$";
+        unlink "$cdir/content.$$";
     }
 }
 
@@ -787,101 +793,106 @@ sub download {
     $path =~ m{/([^/]+)$};
     my $file = $1;
     my $file2 = "$cdir/$file";
-    my $download = 0;
-    my $ua = LWP::UserAgent->new();
 
-    if ($file_doesnt_change && -e $file2) {
-        # ok
-    }
-    elsif (-e $file2) {
-        my $response = $ua->head("$cpan$path");
-        if ($response->header("Client-Warning")) {
-            die $response->message() . "\n";
+    if (-e $file2) {
+        if ($file_doesnt_change) {
+            print "Using cached $file\n";
+            return 0;
         }
-        if ($response->code() != 200) {
-            die $response->code() . " " . $response->message() . "\n";
-        }
-        my $remote_mtime_str = $response->header("Last-Modified");
-        if ($remote_mtime_str) {
-            my $remote_mtime = parse_date($remote_mtime_str);
-            my @stat = stat($file2);
-            my $mtime = $stat[9];
-            if ($remote_mtime > $mtime) {
-                # Remote file is newer than the one we got, redownload.
-                print "Redownloading $path [" . localtime($remote_mtime) . "]\n";
-                $download = 1;
-            }
-            else {
-                my $size = $response->header("Content-Length");
-                if ($size != -s $file2) {
-                    my $size_hr = human_readable($size);
-                    print "Redownloading $path [$size_hr]\n";
-                    $download = 1;
-                }
-            }
-        }
-        else {
-            # Redownload because I dont know if remote is newer or not.
-            print "Redownloading $path\n";
-            $download = 1;
+        my $retval = download_head($path, $file2);
+        if ($retval) {
+            download_get($path, $file2);
+            return 1;
         }
     }
     else {
         # First time downloading.
         print "Downloading $path\n";
-        $download = 1;
+        download_get($path, $file2);
+        return 1;
     }
 
-    if (!$download) {
-        print "Using cached $file\n";
-        return 0;
-    }
+    print "Using cached $file\n";
+    return 0;
+}
 
-    my $fh;
-    my $i = 0;
-    my $size = 0;
-    my $size_hr;
-    my $size2;
-    my $size2_hr;
-    my $columns = `tput cols`;
-    my $time1 = Time::HiRes::time();
-    my $time2;
-    my $response = $ua->get("$cpan$path", ":content_cb" => sub {
-        my ($data, $response, $protocol) = @_;
-        if ($i == 0) {
-            open $fh, ">", $file2;
-            binmode $fh;
-            $size2 = $response->header("Content-Length");
-            $size2_hr = human_readable($size2);
+sub download_head {
+    my ($path, $file) = @_;
+    my $ofile = "$cdir/output.$$";
+    my $headers = `curl $cpan$path -I 2>$ofile`;
+    open my $fh, "<", $ofile or die "Can't open $ofile: $!";
+    my $output = do {local $/; <$fh>};
+    close $fh;
+    unlink $ofile;
+    if ($output =~ /(curl: .*)\n\z/m) {
+        my $mesg = $1;
+        die "$mesg\n";
+    }
+    if ($headers =~ /^HTTP\S*\s+(\d+)(\s+([^\r\n]*))?/i) {
+        my $code = $1;
+        my $mesg = $3;
+        if ($code != 200) {
+            my $mesg2 = $code;
+            $mesg2 .= " $mesg" if $mesg;
+            die "$mesg2\n";
         }
-        $i++;
-        my $size3 = length($data);
-        $size += $size3;
-        $size_hr = human_readable($size);
-        my $bar_size = int($size / $size2 * ($columns - 2));
-        my $bar = ("#" x $bar_size) . (" " x ($columns - 2 - $bar_size));
-        my $time2 = Time::HiRes::time();
-        my $diff = $time2 - $time1;
-        my $rate = $size3 / $diff;
-        my $rate_hr = human_readable($rate);
-        my $percent = $size / $size2 * 100;
-        print STDERR "[$bar]\n";
-        printf STDERR "%.0f%% - $size_hr of $size2_hr - $rate_hr/s    ", $percent;
-        print STDERR "\e[A\r";
-        $time1 = $time2;
-        print $fh $data;
-    });
-    if ($fh) {
-        close $fh;
     }
-    if ($response->header("Client-Warning")) {
-        die $response->message() . "\n";
+    if ($headers !~ /^Last-Modified: ([^\r\n]+)/im) {
+        # Redownload because I dont know if remote is newer or not.
+        print "Redownloading $path\n";
+        return 1;
     }
-    if ($response->code() != 200) {
-        die $response->code() . " " . $response->message() . "\n";
+    my $remote_mtime_str = $1;
+    my $remote_mtime = parse_date($remote_mtime_str);
+    my @stat = stat($file);
+    my $mtime = $stat[9];
+    if ($remote_mtime > $mtime) {
+        # Remote file is newer than the one we got, redownload.
+        print "Redownloading $path [" . localtime($remote_mtime) . "]\n";
+        return 1;
     }
-    print "\n\n";
-    return 1;
+    if ($headers =~ /^Content-Length: ([^\r\n]+)/im) {
+        my $size = $1;
+        if ($size != -s $file) {
+            my $size_hr = human_readable($size);
+            print "Redownloading $path [$size_hr]\n";
+            return 1;
+        }
+    }
+    return 0;
+}
+
+sub download_get {
+    my ($path, $file) = @_;
+    my $ofile = "$cdir/output.$$";
+    my $hfile = "$cdir/headers.$$";
+    my $cfile = "$cdir/content.$$";
+    system "curl $cpan$path -o $cfile -D $hfile 2>&1 | tee $ofile";
+    my $fh;
+    open $fh, "<", $ofile or die "Can't open $ofile: $!";
+    my $output = do {local $/; <$fh>};
+    close $fh;
+    unlink $ofile;
+    if ($output =~ /(curl: .*)\n\z/m) {
+        unlink $cfile;
+        unlink $hfile;
+        exit;
+    }
+    open $fh, "<", $hfile or die "Can't open $hfile: $!";
+    my $headers = do {local $/; <$fh>};
+    close $fh;
+    unlink $hfile;
+    if ($headers =~ /^HTTP\S*\s+(\d+)(\s+([^\r\n]*))?/i) {
+        my $code = $1;
+        my $mesg = $3;
+        if ($code != 200) {
+            my $mesg2 = $code;
+            $mesg2 .= " $mesg" if $mesg;
+            unlink $cfile;
+            die "$mesg2\n";
+        }
+    }
+    rename $cfile, $file or die "Can't rename $cfile -> $file: $!";
 }
 
 sub human_readable {
