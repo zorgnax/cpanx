@@ -74,7 +74,7 @@ sub setup_program {
 
 sub clean_module_cache {
     chdir $cdir or die "Can't chdir to $cdir: $!";
-    system "find . ! -name . -maxdepth 1 \\( -type d -o -name '*.tar.gz' \\) -exec rm -rvf {} \\;";
+    system "find . ! -name . -maxdepth 1 \\( -type d -o -name '*.tar.gz' -o -name '*.tgz' \\) -exec rm -rvf {} \\;";
 }
 
 sub display_perldoc {
@@ -688,6 +688,9 @@ sub download_module {
     if ($file =~ /(.+)\.tar\.gz$/) {
         $file2 = "$cdir/$1";
     }
+    elsif ($file =~ /(.+)\.tgz$/) {
+        $file2 = "$cdir/$1";
+    }
     else {
         die "Unknown file format \"$file\".\n";
     }
@@ -793,145 +796,48 @@ sub download {
     $path =~ m{/([^/]+)$};
     my $file = $1;
     my $file2 = "$cdir/$file";
+    my $cmd2 = "";
 
     if (-e $file2) {
         if ($file_doesnt_change) {
-            print "Using cached $file\n";
+            print "Using cached $path\n";
             return 0;
         }
-        my $retval = download_head($path, $file2);
-        if ($retval) {
-            download_get($path, $file2);
-            return 1;
-        }
+        print "Updating $path\n";
+        $cmd2 .= "-z $file2 ";
     }
     else {
-        # First time downloading.
         print "Downloading $path\n";
-        download_get($path, $file2);
-        return 1;
     }
 
-    print "Using cached $file\n";
-    return 0;
-}
-
-sub download_head {
-    my ($path, $file) = @_;
-    my $ofile = "$cdir/output.$$";
-    my $headers = `curl $cpan$path -I 2>$ofile`;
-    open my $fh, "<", $ofile or die "Can't open $ofile: $!";
-    my $output = do {local $/; <$fh>};
-    close $fh;
-    unlink $ofile;
-    if ($output =~ /(curl: .*)\n\z/m) {
-        my $mesg = $1;
-        die "$mesg\n";
-    }
-    if ($headers =~ /^HTTP\S*\s+(\d+)(\s+([^\r\n]*))?/i) {
-        my $code = $1;
-        my $mesg = $3;
-        if ($code != 200) {
-            my $mesg2 = $code;
-            $mesg2 .= " $mesg" if $mesg;
-            die "$mesg2\n";
-        }
-    }
-    if ($headers !~ /^Last-Modified: ([^\r\n]+)/im) {
-        # Redownload because I dont know if remote is newer or not.
-        print "Redownloading $path\n";
-        return 1;
-    }
-    my $remote_mtime_str = $1;
-    my $remote_mtime = parse_date($remote_mtime_str);
-    my @stat = stat($file);
-    my $mtime = $stat[9];
-    if ($remote_mtime > $mtime) {
-        # Remote file is newer than the one we got, redownload.
-        print "Redownloading $path [" . localtime($remote_mtime) . "]\n";
-        return 1;
-    }
-    if ($headers =~ /^Content-Length: ([^\r\n]+)/im) {
-        my $size = $1;
-        if ($size != -s $file) {
-            my $size_hr = human_readable($size);
-            print "Redownloading $path [$size_hr]\n";
-            return 1;
-        }
-    }
-    return 0;
-}
-
-sub download_get {
-    my ($path, $file) = @_;
     my $ofile = "$cdir/output.$$";
     my $hfile = "$cdir/headers.$$";
     my $cfile = "$cdir/content.$$";
-    system "curl $cpan$path -o $cfile -D $hfile 2>&1 | tee $ofile";
-    my $fh;
-    open $fh, "<", $ofile or die "Can't open $ofile: $!";
+    my $cmd = "curl $cpan$path $cmd2-o $cfile -D $hfile 2>&1 | tee $ofile";
+    system $cmd;
+    open my $fh, "<", $ofile or die "Can't open $ofile: $!";
     my $output = do {local $/; <$fh>};
     close $fh;
-    unlink $ofile;
+    open my $fh2, "<", $hfile or die "Can't open $hfile: $!";
+    my $headers = do {local $/; <$fh2>};
+    close $fh2;
     if ($output =~ /(curl: .*)\n\z/m) {
-        unlink $cfile;
-        unlink $hfile;
         exit;
     }
-    open $fh, "<", $hfile or die "Can't open $hfile: $!";
-    my $headers = do {local $/; <$fh>};
-    close $fh;
-    unlink $hfile;
     if ($headers =~ /^HTTP\S*\s+(\d+)(\s+([^\r\n]*))?/i) {
         my $code = $1;
         my $mesg = $3;
-        if ($code != 200) {
+        if ($code == 304) {
+            return 0;
+        }
+        elsif ($code != 200) {
             my $mesg2 = $code;
             $mesg2 .= " $mesg" if $mesg;
-            unlink $cfile;
             die "$mesg2\n";
         }
     }
-    rename $cfile, $file or die "Can't rename $cfile -> $file: $!";
-}
-
-sub human_readable {
-    my ($size) = @_;
-    my @power = ("B", "K", "M", "G", "T", "P", "E", "Z", "Y");
-    my $i = 0;
-    my $abs_size = abs $size;
-    for ($i = 0; $i < @power; $i++) {
-        last if $abs_size < 1024;
-        $abs_size /= 1024;
-    }
-    my $str = sprintf("%.1f", $abs_size) . $power[$i];
-    $str =~ s/\.0//;
-    $str = "-$str" if $size < 0;
-    return $str;
-}
-
-# For dates that look like Fri, 25 May 2018 13:49:46 GMT
-sub parse_date {
-    my ($str) = @_;
-    return () if !$str;
-    $str =~ m{^(\w+), \s+ (\d+) \s+ (\w+) \s+ (\d+) \s+ (\d+) : (\d+) : (\d+) \s+ GMT}x
-        or die "Can't parse date \"$str\"\n";
-    my $dow = $1;
-    my $day = $2;
-    my $monthstr = $3;
-    my $year = $4;
-
-    my $hour = $5;
-    my $min = $6;
-    my $sec = $7;
-    my %months = (
-        Jan => 1, Feb => 2, Mar => 3, Apr => 4, May => 5, Jun => 6,
-        Jul => 7, Aug => 8, Sep => 9, Oct => 10, Nov => 11, Dec => 12,
-    );
-    my $month = $months{$monthstr} or die "Unknown month $monthstr\n";
-    local $ENV{TZ} = "GMT";
-    my $time = POSIX::mktime($sec, $min, $hour, $day, $month - 1, $year - 1900, 0, 0, -1);
-    return $time;
+    rename $cfile, $file2 or die "Can't rename $cfile -> $file2: $!";
+    return 1;
 }
 
 sub get_cpan_mirror {
