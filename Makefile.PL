@@ -11,7 +11,7 @@ if ($mm_ver =~ /_/) {
 
 my %params = (
     NAME => "App::Cpanx",
-    VERSION_FROM => "bin/cpanx",
+    VERSION_FROM => "lib/App/Cpanx.pm",
     ABSTRACT => "A CPAN downloader script",
     AUTHOR => "Jacob Gelbman <gelbman\@gmail.com>",
     EXE_FILES => ["bin/cpanx"],

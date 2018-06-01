@@ -7,8 +7,6 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-our $VERSION = "0.05";
-
 my $cpan = "www.cpan.org";
 my $action = "install";
 my $main_module = {};

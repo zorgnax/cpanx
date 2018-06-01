@@ -1,5 +1,8 @@
 Revision history for App::Cpanx
 
+0.06  Fri Jun  1 14:40:16 CDT 2018
+    - Store $VERSION in the module
+
 0.05  Fri Jun  1 14:18:53 CDT 2018
     - Do not use -k with gzip
 
