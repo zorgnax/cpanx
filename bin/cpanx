@@ -7,7 +7,7 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-our $VERSION = "0.01";
+our $VERSION = "0.03";
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -481,7 +481,7 @@ sub get_prereqs {
     }
     for my $key (keys %$meta) {
         if ($key =~ /^((\w+)_)?requires$/) {
-            next if !$meta->{$key};
+            next if !$meta->{$key} || !ref $meta->{$key};
             my $type = $2;
             for my $name (keys %{$meta->{$key}}) {
                 my $version = $meta->{$key}{$name};
@@ -718,39 +718,60 @@ sub choose_mirror {
     }
     close $fh;
     print "There are $i CPAN mirrors:\n\n";
-    for my $mirror (@mirrors) {
-        $mirror->{url} =~ m{^\w+://([^/]+)};
-        my $host = $1;
-        print "$mirror->{i} $mirror->{url} ";
-        my $output = `ping $host -c 1 -t 2`;
-        my $ttl;
-        my $time;
-        my $timeout;
-        if ($output =~ /ttl=(\d+) time=([\d\.]+) ms$/m) {
-            $mirror->{ttl} = $1;
-            $mirror->{time} = $2;
-            print "time=$mirror->{time} ms\n";
-        }
-        else {
-            $mirror->{timeout} = 1;
-            print "[timed out]\n";
-        }
-    }
-    my @mirrors2 = sort {
-        ($a->{time} || 999) <=> ($b->{time} || 999)
-    } @mirrors;
-
     $file = "$cdir/mirrorsping.txt";
     open $fh, ">", $file or die "Can't open $file: $!";
-    for my $mirror (@mirrors2) {
-        if ($mirror->{timeout}) {
-            print $fh "$mirror->{url} [timed out]\n";
+    my $max_children = 50;
+    my $num_children = 0;
+    for my $mirror (@mirrors) {
+        if ($num_children >= $max_children) {
+            wait();
+            $num_children--;
+        }
+        my $pid = fork();
+        if (!defined $pid) {
+            die "Can't fork: $!";
+        }
+        elsif ($pid != 0) {
+            $num_children++;
         }
         else {
-            print $fh "$mirror->{url} time=$mirror->{time} ms\n";
+            $mirror->{url} =~ m{^\w+://([^/]+)};
+            my $host = $1;
+            my $output = `ping $host -c 1 -t 2`;
+            my $ttl;
+            my $time;
+            if ($output =~ /ttl=(\d+) time=([\d\.]+) ms$/m) {
+                $ttl = $1;
+                $time = $2;
+                print "$mirror->{i} $mirror->{url} time=$time ms\n";
+            }
+            else {
+                $time = 999;
+                print "$mirror->{i} $mirror->{url} [timed out]\n";
+            }
+            print $fh "$time $mirror->{i} $mirror->{url}\n";
+            exit;
         }
     }
     close $fh;
+    while ($num_children) {
+        wait();
+        $num_children--;
+    }
+    system "sort -n $file > $file.2; mv $file.2 $file;";
+    open $fh, "<", $file or die "Can't open $file: $!";
+    while (my $line = <$fh>) {
+        if ($line =~ /^([\d.]+)\s+(\d+)\s+(.*)/) {
+            my $time = $1;
+            my $i = $2;
+            my $url = $3;
+            $mirrors[$i - 1]{time} = $time;
+        }
+    }
+    close $fh;
+    my @mirrors2 = sort {
+        ($a->{time} || 999) <=> ($b->{time} || 999)
+    } @mirrors;
 
     print "\nBest mirrors by response time:\n";
     for my $i (0 .. 9) {
@@ -769,7 +790,9 @@ sub choose_mirror {
     elsif ($input =~ /^(\d+)$/) {
         my $i = $1;
         my $mirror = $mirrors[$i - 1];
-        $url = $mirror->{url};
+        if ($mirror) {
+            $url = $mirror->{url};
+        }
     }
     else {
         $url = $input;

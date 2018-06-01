@@ -1,5 +1,11 @@
 Revision history for App::Cpanx
 
+0.03  Fri Jun  1 13:46:50 CDT 2018
+    - Run pings simultaneously
+
+0.02  Fri Jun  1 12:20:14 CDT 2018
+    - Add EXE_FILES to Makefile.PL
+
 0.01  Fri Jun  1 00:59:34 CDT 2018
     - cpanx, a CPAN downloader script
 

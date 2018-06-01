@@ -14,6 +14,7 @@ my %params = (
     VERSION_FROM => "bin/cpanx",
     ABSTRACT => "A CPAN downloader script",
     AUTHOR => "Jacob Gelbman <gelbman\@gmail.com>",
+    EXE_FILES => ["bin/cpanx"],
     clean => {FILES => "App-Cpanx-*.tar.gz *.bak"},
 );
 
