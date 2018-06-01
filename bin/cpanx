@@ -7,7 +7,7 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-our $VERSION = "0.04";
+our $VERSION = "0.05";
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -597,7 +597,7 @@ sub get_packages_details {
     $got_package_details = 1;
     my $retval = download("/modules/02packages.details.txt.gz");
     if ($retval || !-e "$cdir/02packages.details.txt") {
-        system "gzip -d -k -f $cdir/02packages.details.txt.gz";
+        system "gzip -d -c -f $cdir0/02packages.details.txt.gz >$cdir0/02packages.details.txt";
     }
 }
 
@@ -1282,12 +1282,13 @@ cpanx - A CPAN downloader script
 
 =head1 DESCRIPTION
 
-This program will download, display, and install modules from CPAN.
-A public repository of publicly contributed perl code.
+This program will download, display, and install modules (and their
+dependencies) from CPAN. A public repository of user contributed
+perl code.
 
-This script is different to similar scripts like cpan or cpanm in
-that it will show the list of modules that it will install then ask
-if you want to install them before actually installing anything.
+This script is different to scripts like cpan and cpanm in that it
+will show what it will do before it does anything. This is important
+when a module has a lot of dependencies.
 
 Just run something like "cpanx Module", it will download what it
 needs, then display the dependencies in the order that they will

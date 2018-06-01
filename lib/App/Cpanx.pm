@@ -45,12 +45,13 @@ cpanx - A CPAN downloader script
 
 =head1 DESCRIPTION
 
-This program will download, display, and install modules from CPAN.
-A public repository of publicly contributed perl code.
+This program will download, display, and install modules (and their
+dependencies) from CPAN. A public repository of user contributed
+perl code.
 
-This script is different to similar scripts like cpan or cpanm in
-that it will show the list of modules that it will install then ask
-if you want to install them before actually installing anything.
+This script is different to scripts like cpan and cpanm in that it
+will show what it will do before it does anything. This is important
+when a module has a lot of dependencies.
 
 Just run something like "cpanx Module", it will download what it
 needs, then display the dependencies in the order that they will

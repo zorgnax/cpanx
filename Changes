@@ -1,5 +1,8 @@
 Revision history for App::Cpanx
 
+0.05  Fri Jun  1 14:18:53 CDT 2018
+    - Do not use -k with gzip
+
 0.04  Fri Jun  1 13:53:32 CDT 2018
     - Use -R option for curl
 
