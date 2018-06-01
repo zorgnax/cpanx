@@ -7,9 +7,6 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-use Data::Dumper;
-use YAML;
-
 my $cpan = "www.cpan.org";
 my $action = "install";
 my $main_module = {};
@@ -60,7 +57,6 @@ sub do_action {
 }
 
 sub setup_program {
-    binmode STDOUT, ":utf8";
     # Make sure END block is executed after ^C or a kill
     $SIG{INT} = sub {exit;};
     $SIG{TERM} = sub {exit;};
@@ -572,7 +568,7 @@ sub get_meta_data2 {
         open my $fh, "<", $file or die "Can't open $file: $!";
         my $content = do {local $/; <$fh>};
         close $fh;
-        my $meta = YAML::Load($content);
+        my $meta = parse_yaml($content);
         return $meta;
     }
     run_configure($module);
@@ -908,7 +904,7 @@ sub parse_json_hash {
             die "Expected :\n";
         }
         if (!parse_json_value($str, \$val2)) {
-            die "Expected value\n";
+            die "Expected value.\n";
         }
         push @values, $val2;
         if ($$str !~ /\G\s*,/gc) {
@@ -1003,6 +999,83 @@ sub parse_json {
         die "Unexpected character\n";
     }
     return $val;
+}
+
+sub unquote_str {
+    my ($str) = @_;
+    my $str2;
+    if ($str =~ /^"/) {
+        parse_json_str(\$str, \$str2);
+    }
+    elsif ($str =~ /^'(.*)'/) {
+        $str2 = $1;
+    }
+    else {
+        $str2 = $str;
+    }
+    return $str2;
+}
+
+sub parse_yaml {
+    my ($str) = @_;
+    my $top = {
+        indent => -1,
+    };
+    my $val = $top;
+    while ($str =~ /\G([ ]*)(.*)\n/g) {
+        my $indent = length($1);
+        my $content = $2;
+        next if $content =~ /^---|^\s*#|^\s*$/;
+        my $val2 = {indent => $indent};
+        if ($content =~ /^-(\s+|$)(.*)/) {
+            $val2->{type} = "li";
+            $val2->{value} = $2;
+            $val2->{value} = unquote_str($val2->{value});
+        }
+        elsif ($content =~ /^(.*?)\s*:(\s+|$)(.*)/) {
+            $val2->{type} = "keyval";
+            $val2->{key} = $1;
+            $val2->{value} = $3;
+            $val2->{key} = unquote_str($val2->{key});
+            $val2->{value} = unquote_str($val2->{value});
+        }
+        else {
+            die "Unknown YAML content \"$content\"\n";
+        }
+        my $parent = $val;
+        while ($parent) {
+            if ($indent > $parent->{indent}) {
+                $val2->{parent} = $parent;
+                push @{$parent->{children}}, $val2;
+                last;
+            }
+            $parent = $parent->{parent};
+        }
+        $val = $val2;
+    }
+    clean_yaml($top);
+    return $top->{value};
+}
+
+sub clean_yaml {
+    my ($obj) = @_;
+    if ($obj->{children}) {
+        my $obj2 = $obj->{children}[0];
+        if ($obj2->{type} eq "li") {
+            $obj->{value} = [];
+            for my $obj2 (@{$obj->{children}}) {
+                clean_yaml($obj2);
+                push @{$obj->{value}}, $obj2->{value};
+            }
+        }
+        elsif ($obj2->{type} eq "keyval") {
+            $obj->{value} = {};
+            for my $obj2 (@{$obj->{children}}) {
+                clean_yaml($obj2);
+                $obj->{value}{$obj2->{key}} = $obj2->{value};
+            }
+        }
+    }
 }
 
 sub add_configure_opt {
