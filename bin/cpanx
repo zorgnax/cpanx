@@ -7,7 +7,7 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-our $VERSION = "0.03";
+our $VERSION = "0.04";
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -833,7 +833,7 @@ sub download {
     my $ofile = "$cdir/output.$$";
     my $hfile = "$cdir/headers.$$";
     my $cfile = "$cdir/content.$$";
-    my $cmd = "curl $cpan$path $cmd2-o $cfile -D $hfile 2>&1 | tee $ofile";
+    my $cmd = "curl $cpan$path $cmd2-o $cfile -D $hfile -R 2>&1 | tee $ofile";
     system $cmd;
     open my $fh, "<", $ofile or die "Can't open $ofile: $!";
     my $output = do {local $/; <$fh>};
