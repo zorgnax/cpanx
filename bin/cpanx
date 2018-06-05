@@ -7,7 +7,7 @@ use POSIX ();
 use Cwd;
 use ExtUtils::MakeMaker;
 
-our $VERSION = "0.07";
+our $VERSION = "0.08";
 
 my $cpan = "www.cpan.org";
 my $action = "install";
@@ -677,7 +677,7 @@ sub init_main_module {
 sub download_module_named {
     my ($module) = @_;
     if ($module->{name} =~ /^(perl|Config|Errno)$/i) {
-        die "Skipping module in Perl source.\n";
+        die "Skipping $module->{name} module.\n";
     }
     get_packages_details();
     my $file = "$cdir/02packages.details.txt";
@@ -688,7 +688,6 @@ sub download_module_named {
         if ($line =~ /^$module->{name}\s+(\S+)\s+(\S+)$/i) {
             $version = $1;
             $path = $2;
-            print "$module->{name} is in /modules/by-authors/id/$path\n";
             last;
         }
     }
@@ -697,7 +696,7 @@ sub download_module_named {
         die "Can't find $module->{name} module.\n";
     }
     if ($path =~ m{/perl-[^/]+$}) {
-        die "Skipping module in Perl source.\n";
+        die "Skipping $module->{name} module in Perl source.\n";
     }
     $path = "/modules/by-authors/id/$path";
     my $dir = download_module($path);
@@ -842,30 +841,24 @@ sub download {
     }
     $download_hash{$path} = 1;
     $download_count++;
-    if ($download_count == 1) {
-        print "Using mirror $cpan\n";
-    }
     $path =~ m{/([^/]+)$};
     my $file = $1;
     my $file2 = "$cdir/$file";
-    my $cmd2 = "";
+    my $newer = "";
 
     if (-e $file2) {
         if ($file_doesnt_change) {
-            print "Using cached $path\n";
+            print "Using cached $cpan$path\n";
             return 0;
         }
-        print "Updating $path\n";
-        $cmd2 .= "-z $file2 ";
-    }
-    else {
-        print "Downloading $path\n";
+        $newer .= "-z $file2 ";
     }
 
     my $ofile = "$cdir/output.$$";
     my $hfile = "$cdir/headers.$$";
     my $cfile = "$cdir/content.$$";
-    my $cmd = "curl $cpan$path $cmd2-o $cfile -D $hfile -R 2>&1 | tee $ofile";
+    print "curl $cpan$path $newer-R\n";
+    my $cmd = "curl $cpan$path $newer-R -o $cfile -D $hfile 2>&1 | tee $ofile";
     system $cmd;
     open my $fh, "<", $ofile or die "Can't open $ofile: $!";
     my $output = do {local $/; <$fh>};
@@ -1263,7 +1256,7 @@ Usage: cpanx [<options>] <module>
 -m=<url>   sets the cpan mirror. default www.cpan.org
 -M         choose a cpan mirror
 -c         clean module cache
--v         display version
+-v         displays version
 
 -I=<loc>   sets install base path. e.g. /usr/local
 -L=<loc>   sets library install path. e.g. /Library/Perl/5.18
@@ -1304,7 +1297,7 @@ cpanx - A CPAN downloader script
     -m=<url>   sets the cpan mirror. default www.cpan.org
     -M         choose a cpan mirror
     -c         clean module cache
-    -v         display version
+    -v         displays version
 
     -I=<loc>   sets install base path. e.g. /usr/local
     -L=<loc>   sets library install path. e.g. /Library/Perl/5.18

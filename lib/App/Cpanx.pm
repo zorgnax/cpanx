@@ -3,7 +3,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = "0.07";
+our $VERSION = "0.08";
 
 1;
 
@@ -33,7 +33,7 @@ cpanx - A CPAN downloader script
     -m=<url>   sets the cpan mirror. default www.cpan.org
     -M         choose a cpan mirror
     -c         clean module cache
-    -v         display version
+    -v         displays version
 
     -I=<loc>   sets install base path. e.g. /usr/local
     -L=<loc>   sets library install path. e.g. /Library/Perl/5.18
