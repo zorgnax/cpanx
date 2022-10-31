@@ -31,8 +31,8 @@ my %opts = (
 );
 
 get_opts();
-get_cpan_mirror();
 setup_program();
+get_cpan_mirror();
 
 if ($opts{action} eq "mirror") {
     choose_mirror();
@@ -519,7 +519,7 @@ sub run_make_install {
 sub display_info {
     my ($module) = @_;
     my $inst = installed_str($module);
-    print "\n$module->{name} $module->{version} ($inst)\n";
+    print "\n$module->{metaname} $module->{version} ($inst)\n";
     my $meta = $module->{meta};
     if ($meta->{abstract}) {
         print "$meta->{abstract}\n";
@@ -552,12 +552,12 @@ sub display_info {
         }
         for my $prereq (@install) {
             $inst = installed_str($prereq);
-            print "$prereq->{name} $prereq->{version} ($inst)\n";
+            print "$prereq->{metaname} $prereq->{version} ($inst)\n";
         }
     }
     else {
         $inst = installed_str($module);
-        print "Nothing. $module->{name} is up to date ($inst)\n";
+        print "Nothing. $module->{metaname} is up to date ($inst)\n";
     }
 }
 
@@ -655,7 +655,7 @@ sub find_module_in_INC {
 sub get_prereqs {
     my ($module) = @_;
     my $meta = $module->{meta};
-    my @prereqs2;
+    my @prereqs;
     if ($meta->{prereqs}) {
         for my $type (keys %{$meta->{prereqs}}) {
             for my $type2 (keys %{$meta->{prereqs}{$type}}) {
@@ -663,7 +663,7 @@ sub get_prereqs {
                     my $version = $meta->{prereqs}{$type}{$type2}{$name};
                     my $prereq = {name => $name, version_needed => $version, type => $type};
                     $prereq->{opt} = 1 if $type2 ne "requires";
-                    push @prereqs2, $prereq;
+                    push @prereqs, $prereq;
                 }
             }
         }
@@ -675,46 +675,57 @@ sub get_prereqs {
             for my $name (keys %{$meta->{$key}}) {
                 my $version = $meta->{$key}{$name};
                 my $prereq = {name => $name, version_needed => $version, type => $type};
-                push @prereqs2, $prereq;
+                push @prereqs, $prereq;
             }
         }
     }
+
+    # There are prereqs for different types like test or runtime or
+    # develop, this loop will combine all types into one prereq with a
+    # list of it's types inside.
     my %prereqs;
-    for my $prereq2 (@prereqs2) {
-        next if $prereq2->{opt};
-        next if $prereq2->{type} && $prereq2->{type} =~ /^(develop|x_dist_zilla|test)$/i;
+    for my $tprereq (@prereqs) {
+        next if $tprereq->{opt};
+        my $type = $tprereq->{type} || "";
+        next if $type =~ /^(develop|x_dist_zilla)$/i;
         my $prereq;
-        if ($prereqs{$prereq2->{name}}) {
-            $prereq = $prereqs{$prereq2->{name}};
+        if ($prereqs{$tprereq->{name}}) {
+            $prereq = $prereqs{$tprereq->{name}};
         }
         else {
-            $prereq = {name => $prereq2->{name}, version_needed => $prereq2->{version_needed}, type => [], depth => $module->{depth} + 1};
-            $prereq->{opt} = 1 if $prereq2->{opt};
+            $prereq = {
+                name => $tprereq->{name},
+                version_needed => $tprereq->{version_needed},
+                type => [],
+                depth => $module->{depth} + 1,
+            };
+            $prereq->{opt} = 1 if $tprereq->{opt};
             $prereqs{$prereq->{name}} = $prereq;
         }
-        if ($prereq2->{type}) {
-            push @{$prereq->{type}}, $prereq2->{type};
+        if ($type) {
+            push @{$prereq->{type}}, $type;
         }
-        if (!$prereq2->{opt}) {
+        if (!$tprereq->{opt}) {
             delete $prereq->{opt};
         }
     }
-    my @prereqs;
+
+    my @prereqs_sorted;
     for my $name (sort keys %prereqs) {
-        push @prereqs, $prereqs{$name};
+        push @prereqs_sorted, $prereqs{$name};
     }
-    $module->{prereqs} = \@prereqs;
+    $module->{prereqs} = \@prereqs_sorted;
 }
 
 sub process_meta_data {
     my ($module, $meta) = @_;
     $module->{meta} = $meta;
-    $module->{metaname} = $meta->{name};
     $module->{version} = $meta->{version};
-    if (!$module->{name}) {
-        my $name = $module->{metaname};
+    if ($meta->{name}) {
+        my $name = $meta->{name};
         $name =~ s/-/::/g;
-        $module->{name} = $name;
+        $module->{name} ||= $name;
+        $module->{metaname} = $name;
     }
 }
 
@@ -889,7 +900,6 @@ sub download_module {
     $path =~ m{/([^/]+)$};
     my $name = $1;
     my $dir;
-    # TODO might want to extract the name of the folder from the achive itself
     if ($name =~ /(.+)\.tar\.gz$/) {
         $dir = $1;
     }
@@ -909,23 +919,25 @@ sub download_module {
 }
 
 sub choose_mirror {
+    # The mirror list seemed to have moved to http://mirrors.cpan.org/cpan-json.txt
+    # and is not inside the cpan repo anymore.
     my $file = download("/indices/mirrors.json", "data");
     open my $fh, "<", $file or die "Can't open $file: $!";
     my %hash;
     my @mirrors;
-    my $i = 0;
+    my $index = 0;
     while (my $line = <$fh>) {
         if ($line =~ m{^\s*"http"\s*:\s*"([^"]+)"}m) {
             my $url = $1;
             $url =~ s{/+$}{};
             next if $hash{$url};
             $hash{$url} = 1;
-            $i++;
-            push @mirrors, {i => $i, url => $url};
+            $index++;
+            push @mirrors, {index => $index, url => $url};
         }
     }
     close $fh;
-    print "There are $i CPAN mirrors:\n\n";
+    print "There are $index CPAN mirrors:\n\n";
 
     $file = "data/mirrorsping.txt";
     open $fh, ">", $file or die "Can't open $file: $!";
@@ -946,20 +958,19 @@ sub choose_mirror {
         else {
             $mirror->{url} =~ m{^\w+://([^/]+)};
             my $host = $1;
-            # TODO Mac requires root to run ping now, make sure it errors ok
             my $output = `ping $host -c 1 -t 2`;
             my $ttl;
             my $time;
             if ($output =~ /ttl=(\d+) time=([\d\.]+) ms$/m) {
                 $ttl = $1;
                 $time = $2;
-                print "$mirror->{i} $mirror->{url} time=$time ms\n";
+                print "$mirror->{index} $mirror->{url} time=$time ms\n";
             }
             else {
                 $time = 999;
-                print "$mirror->{i} $mirror->{url} [timed out]\n";
+                print "$mirror->{index} $mirror->{url} [timed out]\n";
             }
-            print $fh "$time $mirror->{i} $mirror->{url}\n";
+            print $fh "$time $mirror->{index} $mirror->{url}\n";
             exit;
         }
     }
@@ -968,14 +979,14 @@ sub choose_mirror {
         wait();
         $num_children--;
     }
-    system "sort -n $file > $file.2; mv $file.2 $file;";
+    system "sort -n $file > $file.sorted; mv $file.sorted $file;";
     open $fh, "<", $file or die "Can't open $file: $!";
     while (my $line = <$fh>) {
         if ($line =~ /^([\d.]+)\s+(\d+)\s+(.*)/) {
             my $time = $1;
-            my $i = $2;
+            my $index = $2;
             my $url = $3;
-            $mirrors[$i - 1]{time} = $time;
+            $mirrors[$index - 1]{time} = $time;
         }
     }
     close $fh;
@@ -984,28 +995,25 @@ sub choose_mirror {
     } @mirrors;
 
     print "\nBest mirrors by response time:\n";
-    for my $i (0 .. 9) {
-        my $mirror = $mirrors2[$i];
+    for my $index (0 .. 9) {
+        my $mirror = $mirrors2[$index];
         last if !$mirror || $mirror->{timeout};
-        print "$mirror->{i} $mirror->{url} time=$mirror->{time} ms\n";
+        print "$mirror->{index} $mirror->{url} time=$mirror->{time} ms\n";
     }
-    print "\nWhich mirror do you want (number or url)? ";
+    print "\nWhich mirror do you want (number)? ";
     my $input = <STDIN>;
     $input =~ s/^\s+|\s+$//g;
 
     my $url = undef;
-    if ($input eq "") {
-        print "Making no changes.\n";
-    }
-    elsif ($input =~ /^(\d+)$/) {
-        my $i = $1;
-        my $mirror = $mirrors[$i - 1];
+    if ($input =~ /^(\d+)$/) {
+        my $index = $1;
+        my $mirror = $mirrors[$index - 1];
         if ($mirror) {
             $url = $mirror->{url};
         }
     }
     else {
-        $url = $input;
+        print "Making no changes.\n";
     }
 
     if ($url) {
