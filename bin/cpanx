@@ -213,27 +213,62 @@ sub list_packages {
     }
 }
 
+sub get_module_count {
+    my ($dir) = @_;
+    if ($dir eq ".") {
+        $dir = $orig_cwd;
+    }
+    my $count = `find -L $dir -name '*.pm' 2>/dev/null | wc -l`;
+    $count =~ s/\s+$//;
+    return $count;
+}
+
 sub display_version {
     print "cpanx version $VERSION location $0\n";
     print "perl version $] location $^X\n\n";
 
     print "%Config:\n";
-    for my $key ("installarchlib", "installprivlib", "installbin",
-                 "installsitearch", "installsitelib", "installsitebin") {
+    my @keys = (
+        "installarchlib",    "installprivlib",   "installbin",
+        "installsitearch",   "installsitelib",   "installsitebin",
+        "installvendorarch", "installvendorlib", "installvendorbin"
+    );
+    for my $key (@keys) {
         my $value = $Config{$key} || "";
-        print "$key $value\n";
+        print "$key $value";
+        if ($opts{with_counts} && $key =~ /(arch|lib)$/) {
+            my $count = get_module_count($value);
+            print " ($count modules)";
+        }
+        print "\n";
     }
 
-    print "\n%ENV:\n";
-    for my $key (sort keys %ENV) {
-        next if $key !~ /^PERL/;
-        my $value = $ENV{$key} || "";
-        print "$key $value\n";
+    # print "\n%ENV:\n";
+    # for my $key (sort keys %ENV) {
+    #     next if $key !~ /^PERL/;
+    #     my $value = $ENV{$key} || "";
+    #     print "$key $value\n";
+    # }
+
+    my %perl5lib;
+    my $str = $ENV{PERL5LIB} || "";
+    for my $dir (split /:/, $str) {
+        $perl5lib{$dir} = 1;
     }
+    my $seen_non_perl5lib = 0;
 
     print "\n\@INC:\n";
     for my $dir (@INC) {
-        print "$dir\n";
+        if (!$seen_non_perl5lib && !$perl5lib{$dir}) {
+            $seen_non_perl5lib = 1;
+            print "--\n";
+        }
+        print "$dir";
+        if ($opts{with_counts}) {
+            my $count = get_module_count($dir);
+            print " ($count modules)";
+        }
+        print "\n";
     }
 }
 
@@ -1382,8 +1417,11 @@ sub get_opts {
         elsif ($arg eq "-c") {
             $opts{action} = "clean";
         }
-        elsif ($arg eq "-v") {
+        elsif ($arg =~ /^-[vV]$/) {
             $opts{action} = "version";
+            if ($arg eq "-V") {
+                $opts{with_counts} = 1;
+            }
         }
         elsif ($arg eq "-u") {
             $opts{action} = "uninstall";

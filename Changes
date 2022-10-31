@@ -9,6 +9,7 @@ Revision history for App::Cpanx
    - Add -g option to list all installed modules
    - Add -G option to list all installed packages
    - Add -w and -W options to show where a module is located
+   - Add -V option to show counts of modules in listed dirs
 
 0.10 Tue Oct 27 23:22:54 CDT 2020
     - Do not install testing and Dist::Zilla prerequisits
