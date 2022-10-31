@@ -371,8 +371,8 @@ sub install_module {
 
 sub get_module_info {
     my ($module) = @_;
-    get_installed_version($module);
     get_meta_data($module);
+    get_installed_version($module);
     get_prereqs($module);
     for my $prereq (@{$module->{prereqs}}) {
         process_prereq($prereq);
