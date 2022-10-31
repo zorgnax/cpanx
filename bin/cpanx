@@ -61,6 +61,9 @@ elsif ($opts{action} eq "list_modules") {
 elsif ($opts{action} eq "list_packages") {
     list_packages();
 }
+elsif ($opts{action} eq "where") {
+    display_where();
+}
 elsif ($opts{action} eq "uninstall") {
     uninstall_module();
 }
@@ -87,30 +90,52 @@ sub setup_program {
     }
 }
 
+sub display_where {
+    my $arg = $opts{module};
+    my $file = $arg;
+    $file =~ s{::}{/}g;
+    $file .= ".pm";
+    for my $dir (@INC) {
+        $dir =~ s{/+$}{};
+        next if $dir eq ".";
+        if (-e "$dir/$file") {
+            print "$dir/$file\n";
+            if (!$opts{all}) {
+                last;
+            }
+        }
+    }
+}
+
 sub list_modules_in_dir {
-    my ($dir) = @_;
+    my ($dir, $top) = @_;
     my $dh;
-    my $retval = opendir $dh, $dir;
+    my $retval = opendir $dh, "$top$dir";
     if (!$retval) {
-        print STDERR "Can't opendir $dir: $!";
+        print STDERR "Can't opendir '$top$dir': $!\n";
         return;
     }
     for my $name (readdir $dh) {
         next if $name =~ /^\.\.?$/;
-        my $file = "$dir/$name";
-        if ($file_hash{$file}) {
-            next;
-        }
-        $file_hash{$file} = 1;
+        my $file = "$top$dir/$name";
         if (-d $file) {
             if (!-l $file) {
-                list_modules_in_dir($file);
+                list_modules_in_dir("$dir/$name", $top);
             }
         }
         else {
             next if $name !~ /\.(\w+)$/;
             my $ext = $1;
             if ($ext =~ /^(pm|pl|so|dylib|dll)$/) {
+                if ($modules_hash{"$dir/$name"}) {
+                    # duplicate
+                    # print "$dir/$name\n";
+                }
+                $modules_hash{"$dir/$name"} = 1;
+                if ($file_hash{$file}) {
+                    next;
+                }
+                $file_hash{$file} = 1;
                 print "$file\n";
             }
         }
@@ -121,7 +146,7 @@ sub list_modules_in_dir {
 sub list_modules {
     for my $dir (@INC) {
         next if $dir eq ".";
-        list_modules_in_dir($dir);
+        list_modules_in_dir("", $dir);
     }
 }
 
@@ -247,17 +272,7 @@ sub uninstall_module {
     my $file = $arg;
     $file =~ s{::}{/}g;
     $file = "auto/$file/.packlist";
-    my $packlist;
-    for my $dir (@INC) {
-        $dir =~ s{/+$}{};
-        next if $dir eq ".";
-        my $file2 = "$dir/$file";
-        if (-e $file2) {
-            $packlist = $file2;
-            last;
-        }
-    }
-    # TODO searching INC needs to be a subroutine
+    my $packlist = find_file_in_INC($file);
     if (!$packlist) {
         die "Unable to find .packlist file\n";
     }
@@ -572,7 +587,7 @@ sub get_installed_version {
             $module->{installed_version} = $];
         }
         else {
-            my $file = find_module($module->{name});
+            my $file = find_module_in_INC($module->{name});
             if ($file) {
                 my $installed_version = MM->parse_version($file);
                 $module->{installed_version} = $installed_version;
@@ -581,11 +596,8 @@ sub get_installed_version {
     }
 }
 
-sub find_module {
-    my ($name) = @_;
-    my $file = $name;
-    $file =~ s{::}{/}g;
-    $file .= ".pm";
+sub find_file_in_INC {
+    my ($file) = @_;
     for my $dir (@INC) {
         $dir =~ s{/+$}{};
         next if $dir eq ".";
@@ -594,6 +606,15 @@ sub find_module {
         }
     }
     return undef;
+}
+
+sub find_module_in_INC {
+    my ($name) = @_;
+    my $file = $name;
+    $file =~ s{::}{/}g;
+    $file .= ".pm";
+    my $file2 = find_file_in_INC($file);
+    return $file2;
 }
 
 sub get_prereqs {
@@ -1382,6 +1403,12 @@ sub get_opts {
         elsif ($arg eq "-T") {
             $opts{test} = 0;
         }
+        elsif ($arg =~ /^-[wW]$/) {
+            $opts{action} = "where";
+            if ($arg eq "-W") {
+                $opts{all} = 1;
+            }
+        }
         elsif ($arg =~ /^-(I|LL|L|B|SC|M1|M3)$/) {
             my $opt = $1;
             my $path = shift(@ARGV);
@@ -1421,6 +1448,8 @@ Usage: cpanx [<options>] <module>
 -T         do not run tests
 -u         uninstalls module
 -v         displays version
+-w         displays where a module is located
+-W         displays all locations where a module is located
 
 -I <loc>   sets install base path. e.g. /usr/local
 -L <loc>   sets library install path. e.g. /Library/Perl/5.18
@@ -1465,6 +1494,8 @@ cpanx - A CPAN downloader script
     -T         do not run tests
     -u         uninstalls module
     -v         displays version
+    -w         displays where a module is located
+    -W         displays all locations where a module is located
 
     -I <loc>   sets install base path. e.g. /usr/local
     -L <loc>   sets library install path. e.g. /Library/Perl/5.18

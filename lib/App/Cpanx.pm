@@ -36,6 +36,8 @@ cpanx - A CPAN downloader script
     -T         do not run tests
     -u         uninstalls module
     -v         displays version
+    -w         displays where a module is located
+    -W         displays all locations where a module is located
 
     -I <loc>   sets install base path. e.g. /usr/local
     -L <loc>   sets library install path. e.g. /Library/Perl/5.18
