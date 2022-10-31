@@ -23,11 +23,12 @@ cpanx - A CPAN downloader script
     -d         dependencies only
     -f         displays info about what files would be installed
     -g         displays a list of globally installed modules
+    -G         displays a list of globally installed packages
     -h         displays this help text
     -i         displays info about the module
     -l         look at module's contents in a shell
-    -M         choose a cpan mirror
     -m <url>   sets the cpan mirror. default www.cpan.org
+    -M         choose a cpan mirror
     -n         not interactive
     -p         display perldoc for the module
     -r         reinstall even if module is installed

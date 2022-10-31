@@ -20,6 +20,8 @@ my @install;
 my $mm_opt = "";
 my $mb_opt = "";
 my %file_hash;
+my %package_hash;
+my %packages;
 my %opts = (
     action => "install",
     test => 1,
@@ -55,6 +57,9 @@ elsif ($opts{action} eq "version") {
 }
 elsif ($opts{action} eq "list_modules") {
     list_modules();
+}
+elsif ($opts{action} eq "list_packages") {
+    list_packages();
 }
 elsif ($opts{action} eq "uninstall") {
     uninstall_module();
@@ -117,6 +122,69 @@ sub list_modules {
     for my $dir (@INC) {
         next if $dir eq ".";
         list_modules_in_dir($dir);
+    }
+}
+
+sub list_packages_in_dir {
+    my ($dir, $top) = @_;
+    my $dh;
+    my $retval = opendir $dh, "$top$dir";
+    if (!$retval) {
+        print STDERR "Can't opendir '$top$dir': $!\n";
+        return;
+    }
+    for my $name (readdir $dh) {
+        next if $name =~ /^\.\.?$/;
+        my $file = "$top$dir/$name";
+        if (-d $file) {
+            if (!-l $file) {
+                list_packages_in_dir("$dir/$name", $top);
+            }
+        }
+        else {
+            next if $name !~ /\.pm$/;
+            my $mname = "$dir/$name";
+            $mname =~ s{^/+}{};
+            $mname =~ s{/}{::}g;
+            $mname =~ s{\.pm$}{};
+            my $pname = $packages{$mname};
+            next if !$pname;
+            if ($package_hash{$pname}) {
+                next;
+            }
+            $package_hash{$pname} = 1;
+            print "$pname\n";
+        }
+    }
+    close $dh;
+}
+
+sub list_packages {
+    get_packages_details();
+    my $file = "data/02packages.details.txt";
+    open my $fh, "<", $file or die "Can't open $file: $!";
+    my $version;
+    my $path;
+    while (my $line = <$fh>) {
+        if ($line =~ /^(\S+)\s+(\S+)\s+(\S+)$/i) {
+            my $mname = $1;
+            my $mversion = $2;
+            my $path = $3;
+            if ($path =~ m{/([^/]+)$}) {
+                my $fname = $1;
+                if ($fname =~ /^([^.]+)-([\d.]+)\.([\w.]+)$/) {
+                    my $pname = $1;
+                    my $pversion = $2;
+                    my $ext = $3;
+                    $packages{$mname} = $pname;
+                }
+            }
+        }
+    }
+    close $fh;
+    for my $dir (@INC) {
+        next if $dir eq ".";
+        list_packages_in_dir("", $dir);
     }
 }
 
@@ -1269,6 +1337,9 @@ sub get_opts {
         elsif ($arg eq "-g") {
             $opts{action} = "list_modules";
         }
+        elsif ($arg eq "-G") {
+            $opts{action} = "list_packages";
+        }
         elsif ($arg eq "-m") {
             $opts{cpan} = shift(@ARGV);
         }
@@ -1336,12 +1407,13 @@ Usage: cpanx [<options>] <module>
 -c         clean module cache
 -d         dependencies only
 -f         displays info about what files would be installed
--g         display list of globally installed modules
+-g         displays list of globally installed modules
+-G         displays list of globally installed packages
 -h         displays this help text
 -i         displays info about the module
 -l         look at module's contents in a shell
--M         choose a cpan mirror
 -m <url>   sets the cpan mirror. default www.cpan.org
+-M         choose a cpan mirror
 -n         not interactive
 -p         display perldoc for the module
 -r         reinstall even if module is installed
@@ -1379,12 +1451,13 @@ cpanx - A CPAN downloader script
     -c         clean module cache
     -d         dependencies only
     -f         displays info about what files would be installed
-    -g         displays a list of globally installed modules
+    -g         displays list of globally installed modules
+    -G         displays list of globally installed packages
     -h         displays this help text
     -i         displays info about the module
     -l         look at module's contents in a shell
-    -M         choose a cpan mirror
     -m <url>   sets the cpan mirror. default www.cpan.org
+    -M         choose a cpan mirror
     -n         not interactive
     -p         display perldoc for the module
     -r         reinstall even if module is installed
