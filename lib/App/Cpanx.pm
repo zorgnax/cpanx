@@ -19,20 +19,20 @@ cpanx - A CPAN downloader script
 
 =head1 OPTIONS
 
-    -h         displays this help text
-    -l         look at module's contents in a shell
-    -i         displays info about the module
-    -f         displays info about what files would be installed
-    -p         display perldoc for the module
-    -u         uninstalls module
-    -n         not interactive
-    -S         do not use sudo
-    -r         reinstall even if module is installed
-    -T         do not run tests
-    -d         dependencies only
-    -m <url>   sets the cpan mirror. default www.cpan.org
-    -M         choose a cpan mirror
     -c         clean module cache
+    -d         dependencies only
+    -f         displays info about what files would be installed
+    -h         displays this help text
+    -i         displays info about the module
+    -l         look at module's contents in a shell
+    -M         choose a cpan mirror
+    -m <url>   sets the cpan mirror. default www.cpan.org
+    -n         not interactive
+    -p         display perldoc for the module
+    -r         reinstall even if module is installed
+    -S         do not use sudo
+    -T         do not run tests
+    -u         uninstalls module
     -v         displays version
 
     -I <loc>   sets install base path. e.g. /usr/local
