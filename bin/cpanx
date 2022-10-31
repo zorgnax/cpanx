@@ -19,6 +19,7 @@ my $got_package_details;
 my @install;
 my $mm_opt = "";
 my $mb_opt = "";
+my %file_hash;
 my %opts = (
     action => "install",
     test => 1,
@@ -52,6 +53,9 @@ elsif ($opts{action} eq "clean") {
 elsif ($opts{action} eq "version") {
     display_version();
 }
+elsif ($opts{action} eq "list_modules") {
+    list_modules();
+}
 elsif ($opts{action} eq "uninstall") {
     uninstall_module();
 }
@@ -75,6 +79,44 @@ sub setup_program {
         unlink "$cdir/data/output.$$";
         unlink "$cdir/data/headers.$$";
         unlink "$cdir/data/content.$$";
+    }
+}
+
+sub list_modules_in_dir {
+    my ($dir) = @_;
+    my $dh;
+    my $retval = opendir $dh, $dir;
+    if (!$retval) {
+        print STDERR "Can't opendir $dir: $!";
+        return;
+    }
+    for my $name (readdir $dh) {
+        next if $name =~ /^\.\.?$/;
+        my $file = "$dir/$name";
+        if ($file_hash{$file}) {
+            next;
+        }
+        $file_hash{$file} = 1;
+        if (-d $file) {
+            if (!-l $file) {
+                list_modules_in_dir($file);
+            }
+        }
+        else {
+            next if $name !~ /\.(\w+)$/;
+            my $ext = $1;
+            if ($ext =~ /^(pm|pl|so|dylib|dll)$/) {
+                print "$file\n";
+            }
+        }
+    }
+    close $dh;
+}
+
+sub list_modules {
+    for my $dir (@INC) {
+        next if $dir eq ".";
+        list_modules_in_dir($dir);
     }
 }
 
@@ -1224,6 +1266,9 @@ sub get_opts {
         elsif ($arg =~ /^(--?help|-h)$/) {
             usage();
         }
+        elsif ($arg eq "-g") {
+            $opts{action} = "list_modules";
+        }
         elsif ($arg eq "-m") {
             $opts{cpan} = shift(@ARGV);
         }
@@ -1291,6 +1336,7 @@ Usage: cpanx [<options>] <module>
 -c         clean module cache
 -d         dependencies only
 -f         displays info about what files would be installed
+-g         display list of globally installed modules
 -h         displays this help text
 -i         displays info about the module
 -l         look at module's contents in a shell
@@ -1333,6 +1379,7 @@ cpanx - A CPAN downloader script
     -c         clean module cache
     -d         dependencies only
     -f         displays info about what files would be installed
+    -g         displays a list of globally installed modules
     -h         displays this help text
     -i         displays info about the module
     -l         look at module's contents in a shell

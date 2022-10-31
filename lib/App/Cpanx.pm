@@ -22,6 +22,7 @@ cpanx - A CPAN downloader script
     -c         clean module cache
     -d         dependencies only
     -f         displays info about what files would be installed
+    -g         displays a list of globally installed modules
     -h         displays this help text
     -i         displays info about the module
     -l         look at module's contents in a shell
